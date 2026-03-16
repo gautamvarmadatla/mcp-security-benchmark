@@ -70,13 +70,19 @@ bash scripts/run_benchmark.sh
 |--------|:---------:|:--------------:|:--------------:|
 | Violation Detection Rate | 100% | 100% | 100% |
 | False Positive Rate | 0% | 0% | 0% |
-| Localization Accuracy | **100%** | 80% | 80% |
+| Localization Accuracy | **100%** | 50% | 80% |
 | Evidence Completeness | 100% | 100% | 100% |
 
-The localization gap is driven by:
-- **S8**: real egress denial; naive inference maps to `scope/runtime`; GT is `observability/observability`
-- **S11**: naive phase maps `HASH_MISMATCH → admission`; GT phase is `runtime`
-- **S12**: naive component maps `AUTHZ_DENIED → authz`; GT component is `scope`
+**lifecycle_only misses 5 scenarios** — naive phase inference from response text:
+- **S1**: `POLICY_VIOLATION` → `invocation_execution`; GT is `creation_registration`
+- **S7**: `HASH_MISMATCH` → `creation_registration`; GT is `update_maintenance` (post-approval drift)
+- **S8**: `POLICY_VIOLATION` → `invocation_execution`; GT is `update_maintenance` (observability gap)
+- **S11**: `HASH_MISMATCH` → `creation_registration`; GT is `update_maintenance` (integrity drift at runtime)
+- **S12**: `AUTHZ_DENIED` → `invocation_execution`; GT is `creation_registration` (overbroad scope root cause)
+
+**component_only misses 2 scenarios** — naive component inference from response text:
+- **S8**: `POLICY_VIOLATION` → `tools`; GT is `server`
+- **S12**: `AUTHZ_DENIED` → `auth_infra`; GT is `tools` (root cause is scope misconfiguration)
 
 ## Output files
 
