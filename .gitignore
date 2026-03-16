@@ -1,0 +1,13 @@
+.venv/
+.env
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+evidence/server_traces/*
+evidence/server_traces_s8/*
+!evidence/server_traces/.gitkeep
+!evidence/server_traces_s8/.gitkeep
